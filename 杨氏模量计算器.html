@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>杨氏模量计算器 - 拉伸法 | 正伸长量处理 + 双组过原点拟合</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" id="MathJax-script" async></script>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            background: #f5f7fb;
+            margin: 0;
+            padding: 24px 20px;
+            color: #1e293b;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 {
+            font-size: 1.8rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            color: #0f172a;
+            border-left: 5px solid #3b82f6;
+            padding-left: 18px;
+        }
+        .sub {
+            color: #475569;
+            margin-bottom: 28px;
+            font-size: 0.9rem;
+            padding-left: 23px;
+        }
+        .card {
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.05);
+            padding: 1.5rem 1.8rem;
+            margin-bottom: 2rem;
+        }
+        .card-title {
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 0.6rem;
+        }
+        .table-wrapper { overflow-x: auto; margin: 1rem 0; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        th, td {
+            border: 1px solid #cbd5e1;
+            padding: 8px 10px;
+            text-align: center;
+            vertical-align: middle;
+        }
+        th { background-color: #f1f5f9; font-weight: 600; }
+        input {
+            width: 100px;
+            padding: 6px 4px;
+            text-align: center;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 0.8rem;
+        }
+        input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.2); }
+        .readonly-cell { background: #f8fafc; font-weight: 500; color: #0f3b5c; }
+        .flex-grid { display: flex; flex-wrap: wrap; gap: 1.5rem; margin-top: 1rem; }
+        .meas-card {
+            flex: 1;
+            min-width: 260px;
+            background: #f8fafc;
+            border-radius: 20px;
+            padding: 1rem;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        .meas-card h4 {
+            margin: 0 0 0.6rem 0;
+            font-weight: 600;
+            background: #e9eef3;
+            padding: 6px 12px;
+            border-radius: 40px;
+        }
+        .meas-table th, .meas-table td { padding: 5px 4px; }
+        .meas-table input { width: 85px; font-size: 0.75rem; }
+        .avg-badge {
+            background: #e6f0ff;
+            padding: 8px 12px;
+            border-radius: 28px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-align: center;
+            margin-top: 12px;
+        }
+        .result-area {
+            background: #f1f5f9;
+            border-radius: 20px;
+            padding: 1.2rem;
+        }
+        .flex-between { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 20px; }
+        .chart-container { max-width: 600px; margin: 0 auto; flex: 1; min-width: 280px; }
+        .note { font-size: 0.75rem; color: #5b6e8c; margin-top: 8px; }
+        @media (max-width: 780px) { .card { padding: 1rem; } input { width: 75px; } }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📏 拉伸法 · 杨氏模量计算器</h1>
+    <div class="sub">原始数据表格 (m - Δx₁ / Δx₂) | 伸长量均取正值 | 双组过原点拟合</div>
+
+    <!-- 1. 标尺读数测量 (两组) - 预填实测数据 -->
+    <div class="card">
+        <div class="card-title">📊 标尺读数测量 (x / cm) &nbsp; <span style="font-size:0.8rem;">砝码质量增量 = 0.320 kg/个</span></div>
+        <div class="table-wrapper">
+            <table id="rulerTable">
+                <thead><tr><th>砝码数 n</th><th>质量 m (kg)</th><th colspan="3">测量组1</th><th colspan="3">测量组2</th><th>总平均读数<br>(cm)</th><th>总伸长量 Δx<br>(cm)</th></tr>
+                <tr><th></th><th></th><th>增加 (cm)</th><th>减少 (cm)</th><th>组平均</th><th>增加 (cm)</th><th>减少 (cm)</th><th>组平均</th><th></th><th></th></tr>
+                </thead>
+                <tbody id="rulerTbody"></tbody>
+            </table>
+        </div>
+        <div class="note">✅ 数据已预填。伸长量 Δx 自动取绝对值，确保为正值（钢丝伸长物理意义）。</div>
+    </div>
+
+    <!-- 2. 原始数据汇总表 (m/kg, Δx₁/cm, Δx₂/cm, 平均Δx/cm) -->
+    <div class="card">
+        <div class="card-title">📋 原始数据汇总表（伸长量均为正值）</div>
+        <div class="table-wrapper">
+            <table id="rawDataTable">
+                <thead><tr><th>m / kg</th><th>Δx₁ / cm</th><th>Δx₂ / cm</th><th>平均 Δx / cm</th></tr></thead>
+                <tbody id="rawDataTbody"></tbody>
+            </table>
+        </div>
+        <div class="note">伸长量 = |当前组平均读数 − 零点组平均读数|，确保正值。</div>
+    </div>
+
+    <!-- 3. 物理量测量 (各10次) -->
+    <div class="card">
+        <div class="card-title">📐 几何参数量 (每个物理量独立测量10次)</div>
+        <div class="flex-grid" id="physSection"></div>
+        <div class="note">📌 仪器允差: 卷尺(L,D)=0.1cm, 游标卡尺(b)=0.002cm, 螺旋测微器(d)=0.0004cm (B类均匀分布)</div>
+    </div>
+
+    <!-- 4. 图解法：m-Δx 双组数据散点图 + 过原点拟合线 -->
+    <div class="card">
+        <div class="card-title">📈 图解法：砝码质量 m vs 伸长量 Δx (正值)</div>
+        <div class="chart-container">
+            <canvas id="dualChart" width="700" height="400" style="width:100%; height:auto;"></canvas>
+        </div>
+        <div class="note">🔵 蓝色点为组1数据，🔴 红色点为组2数据；实线为对应组的过原点拟合直线 (y = k·x)。斜率均值用于计算杨氏模量。</div>
+    </div>
+
+    <!-- 5. 最终杨氏模量结果（基于双组拟合斜率平均）与不确定度 -->
+    <div class="card">
+        <div class="card-title">🎯 杨氏模量计算结果（基于双组拟合斜率平均）</div>
+        <div class="flex-between">
+            <div style="flex:1;">
+                <div class="result-area">
+                    <div style="font-size:1.2rem; font-weight:700;">杨氏模量 E = <span id="finalEValue">---</span> N/m²</div>
+                    <div>扩展不确定度 U<sub>E</sub> = <span id="finalUE">---</span> N/m² (k=1)</div>
+                    <div>相对不确定度 = <span id="relUncert">---</span> %</div>
+                    <div>组1斜率 k₁ = <span id="slope1Val">---</span> kg/m &nbsp; | 组2斜率 k₂ = <span id="slope2Val">---</span> kg/m</div>
+                    <div>平均斜率 k_avg = <span id="kAvgVal">---</span> kg/m &nbsp; | u(k_avg)=<span id="kAvgStd">---</span></div>
+                </div>
+            </div>
+        </div>
+        <div style="margin-top: 28px;">
+            <div style="font-weight:600; margin-bottom:8px;">⚙️ 不确定度分量合成表</div>
+            <div class="table-wrapper">
+                <table class="stats-table" style="min-width:550px;">
+                    <thead><tr><th>物理量</th><th>平均值 ± 合成不确定度</th><th>A类不确定度</th><th>B类不确定度</th><th>相对不确定度 (%)</th></tr></thead>
+                    <tbody id="uncertaintyTableBody"><tr><td colspan="5">计算中......</td></tr></tbody>
+                </table>
+            </div>
+            <div class="note">合成相对不确定度: √[(U<sub>L</sub>/L)²+(U<sub>D</sub>/D)²+(2U<sub>d</sub>/d)²+(U<sub>b</sub>/b)²+(u(k_avg)/k_avg)²]</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const G = 9.80;
+    const MASS_PER_STEP = 0.320;
+    const ALLOWANCE = { L: 0.1, D: 0.1, b: 0.002, d: 0.0004 };
+    const PHYS_CONFIG = [
+        { id: 'L', name: '金属丝长度 L (cm)', defaultVals: [40.82,40.83,40.79,40.81,40.83,40.82,40.81,40.84,40.82,40.84], step: 0.01, digits: 2, unit: 'cm' },
+        { id: 'D', name: '光杠杆镜面到标尺距离 D (cm)', defaultVals: [150.51,150.45,150.51,150.47,150.40,150.39,150.42,150.42,150.30,150.50], step: 0.01, digits: 2, unit: 'cm' },
+        { id: 'b', name: '光杠杆前脚尖到后脚尖垂距 b (cm)', defaultVals: [8.958,8.960,8.960,8.958,8.970,8.920,8.900,8.920,8.939,8.900], step: 0.001, digits: 3, unit: 'cm' },
+        { id: 'd', name: '钢丝直径 d (cm)', defaultVals: [0.0247,0.0248,0.0247,0.0247,0.0246,0.0246,0.0247,0.0247,0.0247,0.0247], step: 0.0001, digits: 4, unit: 'cm' }
+    ];
+
+    let physStore = {
+        L: { values: [], avg: 0, uA: 0, uB: 0, uComb: 0 },
+        D: { values: [], avg: 0, uA: 0, uB: 0, uComb: 0 },
+        b: { values: [], avg: 0, uA: 0, uB: 0, uComb: 0 },
+        d: { values: [], avg: 0, uA: 0, uB: 0, uComb: 0 }
+    };
+    let rulerData = [];            // 存储总平均和总伸长量
+    let groupData = {              // 存储两组独立平均读数和伸长量（正值）
+        grp1_avg: [],
+        grp2_avg: [],
+        grp1_delta: [],
+        grp2_delta: []
+    };
+    let chartInstance = null;
+
+    // ---------- 标尺表格初始化 (预填实测数据) ----------
+    function initRulerTable() {
+        const rawData = [
+            { inc1: 1.30, dec1: 1.31, inc2: 1.30, dec2: 1.30 },
+            { inc1: 0.84, dec1: 0.84, inc2: 0.82, dec2: 0.83 },
+            { inc1: 0.40, dec1: 0.39, inc2: 0.38, dec2: 0.41 },
+            { inc1: -0.10, dec1: -0.18, inc2: -0.12, dec2: -0.18 },
+            { inc1: -0.55, dec1: -0.64, inc2: -0.57, dec2: -0.67 },
+            { inc1: -0.92, dec1: -1.41, inc2: -0.93, dec2: -1.17 },
+            { inc1: -1.45, dec1: -1.59, inc2: -1.45, dec2: -1.59 },
+            { inc1: -1.97, dec1: -1.91, inc2: -1.97, dec2: -1.91 }
+        ];
+        let html = '';
+        for (let n = 0; n <= 7; n++) {
+            let m_kg = (n * MASS_PER_STEP).toFixed(3);
+            let data = rawData[n];
+            html += `<tr data-n="${n}">
+                <td>${n}</td>
+                <td>${m_kg}</td>
+                <td><input type="number" step="0.01" class="inc1" value="${data.inc1.toFixed(2)}" style="width:75px;"></td>
+                <td><input type="number" step="0.01" class="dec1" value="${data.dec1.toFixed(2)}" style="width:75px;"></td>
+                <td class="readonly-cell grp1Avg">-</td>
+                <td><input type="number" step="0.01" class="inc2" value="${data.inc2.toFixed(2)}" style="width:75px;"></td>
+                <td><input type="number" step="0.01" class="dec2" value="${data.dec2.toFixed(2)}" style="width:75px;"></td>
+                <td class="readonly-cell grp2Avg">-</td>
+                <td class="readonly-cell totalAvg">-</td>
+                <td class="readonly-cell deltaX">-</td>
+                           `;
+        }
+        document.getElementById('rulerTbody').innerHTML = html;
+        attachRulerEvents();
+        updateAllRulerAverages();
+    }
+
+    function attachRulerEvents() {
+        document.querySelectorAll('#rulerTable input').forEach(inp => {
+            inp.removeEventListener('input', rulerInputHandler);
+            inp.addEventListener('input', rulerInputHandler);
+        });
+    }
+
+    function rulerInputHandler() { updateAllRulerAverages(); fullComputeAndRender(); }
+
+    function updateAllRulerAverages() {
+        let rows = document.querySelectorAll('#rulerTbody tr');
+        let grp1Readings = [], grp2Readings = [];
+        for (let i = 0; i < rows.length; i++) {
+            let row = rows[i];
+            let inc1 = parseFloat(row.querySelector('.inc1')?.value) || 0;
+            let dec1 = parseFloat(row.querySelector('.dec1')?.value) || 0;
+            let inc2 = parseFloat(row.querySelector('.inc2')?.value) || 0;
+            let dec2 = parseFloat(row.querySelector('.dec2')?.value) || 0;
+            let grp1Avg = (inc1 + dec1)/2;
+            let grp2Avg = (inc2 + dec2)/2;
+            let totalAvg = (grp1Avg + grp2Avg)/2;
+            row.querySelector('.grp1Avg').innerText = grp1Avg.toFixed(3);
+            row.querySelector('.grp2Avg').innerText = grp2Avg.toFixed(3);
+            row.querySelector('.totalAvg').innerText = totalAvg.toFixed(3);
+            grp1Readings.push(grp1Avg);
+            grp2Readings.push(grp2Avg);
+        }
+        let zeroGrp1 = grp1Readings[0];
+        let zeroGrp2 = grp2Readings[0];
+        let zeroTotal = (zeroGrp1 + zeroGrp2)/2;
+        for (let i = 0; i < rows.length; i++) {
+            // 取绝对值保证伸长量为正值
+            let delta_grp1 = Math.abs(grp1Readings[i] - zeroGrp1);
+            let delta_grp2 = Math.abs(grp2Readings[i] - zeroGrp2);
+            let delta_total = (delta_grp1 + delta_grp2)/2;
+            rows[i].querySelector('.deltaX').innerText = delta_total.toFixed(4);
+            rulerData[i] = { n: i, m_kg: i * MASS_PER_STEP, totalAvg_cm: (grp1Readings[i]+grp2Readings[i])/2, deltaX_cm: delta_total };
+            groupData.grp1_avg[i] = grp1Readings[i];
+            groupData.grp2_avg[i] = grp2Readings[i];
+            groupData.grp1_delta[i] = delta_grp1;
+            groupData.grp2_delta[i] = delta_grp2;
+        }
+    }
+
+    // 生成原始数据表格 (m, Δx₁, Δx₂) 正值
+    function updateRawDataTable() {
+        let tbody = document.getElementById('rawDataTbody');
+        let html = '';
+        for (let i = 0; i <= 7; i++) {
+            let m_kg = (i * MASS_PER_STEP).toFixed(3);
+            let dx1 = groupData.grp1_delta[i] !== undefined ? groupData.grp1_delta[i].toFixed(4) : '0.0000';
+            let dx2 = groupData.grp2_delta[i] !== undefined ? groupData.grp2_delta[i].toFixed(4) : '0.0000';
+            let dx_avg = ((parseFloat(dx1)+parseFloat(dx2))/2).toFixed(4);
+            html += `<tr><td>${m_kg}</td><td>${dx1}</td><td>${dx2}</td><td>${dx_avg}</td></tr>`;
+        }
+        tbody.innerHTML = html;
+    }
+
+    // 物理量表格初始化
+    function initPhysTables() {
+        let containerHtml = '';
+        PHYS_CONFIG.forEach(cfg => {
+            let rowsHtml = '';
+            for (let i = 0; i < 10; i++) {
+                let defVal = cfg.defaultVals[i];
+                rowsHtml += `<tr><td style="width:50px;">${i+1}</td><td><input type="number" step="${cfg.step}" value="${defVal.toFixed(cfg.digits)}" class="phys-input" data-phys="${cfg.id}" data-idx="${i}" style="width:100px;"></td></tr>`;
+            }
+            containerHtml += `<div class="meas-card">
+                <h4>${cfg.name} (${cfg.unit})</h4>
+                <div class="table-wrapper"><table class="meas-table"><thead><tr><th>序号</th><th>测量值</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
+                <div class="avg-badge" id="${cfg.id}_avg_display">平均值: -- ${cfg.unit}</div>
+            </div>`;
+        });
+        document.getElementById('physSection').innerHTML = containerHtml;
+        PHYS_CONFIG.forEach(cfg => {
+            physStore[cfg.id].values = [...cfg.defaultVals];
+            updatePhysAverage(cfg.id);
+        });
+        document.querySelectorAll('.phys-input').forEach(inp => {
+            inp.addEventListener('input', (e) => {
+                const physId = inp.dataset.phys;
+                const idx = parseInt(inp.dataset.idx);
+                let newVal = parseFloat(inp.value);
+                if (isNaN(newVal)) newVal = 0;
+                physStore[physId].values[idx] = newVal;
+                updatePhysAverage(physId);
+                fullComputeAndRender();
+            });
+        });
+    }
+
+    function updatePhysAverage(physId) {
+        const vals = physStore[physId].values;
+        let avg = vals.reduce((a,b)=>a+b,0)/vals.length;
+        physStore[physId].avg = avg;
+        let n = vals.length;
+        let sumSq = vals.reduce((s,x)=>s+(x-avg)**2,0);
+        let stdDev = n>1 ? Math.sqrt(sumSq/(n-1)) : 0;
+        let uA = stdDev / Math.sqrt(n);
+        let uB = ALLOWANCE[physId] / Math.sqrt(3);
+        let uComb = Math.sqrt(uA*uA + uB*uB);
+        physStore[physId].uA = uA;
+        physStore[physId].uB = uB;
+        physStore[physId].uComb = uComb;
+        const cfg = PHYS_CONFIG.find(c=>c.id===physId);
+        document.getElementById(`${physId}_avg_display`).innerHTML = `平均值: ${avg.toFixed(cfg.digits+1)} ${cfg.unit}  (A类:${uA.toExponential(3)} / 合成:${uComb.toExponential(3)})`;
+    }
+
+    // 过原点拟合 (x_m, y_kg)
+    function fitOriginSlope(points) {
+        let sumXY = 0, sumX2 = 0;
+        for (let p of points) {
+            sumXY += p.x_m * p.y_kg;
+            sumX2 += p.x_m * p.x_m;
+        }
+        if (sumX2 === 0) return { slope: 0, slopeStd: 0 };
+        let slope = sumXY / sumX2;
+        let n = points.length;
+        let sumResid2 = 0;
+        for (let p of points) {
+            let resid = p.y_kg - slope * p.x_m;
+            sumResid2 += resid * resid;
+        }
+        let sigma2 = sumResid2 / (n - 1);
+        let slopeStd = Math.sqrt(sigma2 / sumX2);
+        return { slope, slopeStd };
+    }
+
+    // 杨氏模量计算公式
+    function computeEFromSlope(slope_kgpm) {
+        let L_cm = physStore.L.avg, D_cm = physStore.D.avg, b_cm = physStore.b.avg, d_cm = physStore.d.avg;
+        if (L_cm===0 || D_cm===0 || b_cm===0 || d_cm===0) return 0;
+        let L_m = L_cm/100, D_m = D_cm/100, b_m = b_cm/100, d_m = d_cm/100;
+        let numerator = 8 * L_m * D_m * G;
+        let denominator = Math.PI * (d_m**2) * b_m;
+        return (numerator / denominator) * slope_kgpm;
+    }
+
+    // 绘制双组散点图 + 过原点拟合线
+    function drawDualPlot() {
+        let ctx = document.getElementById('dualChart').getContext('2d');
+        let points1 = [], points2 = [];
+        for (let i = 0; i <= 7; i++) {
+            let dx1 = groupData.grp1_delta[i];
+            let dx2 = groupData.grp2_delta[i];
+            let m = i * MASS_PER_STEP;
+            if (!isNaN(dx1)) points1.push({ x_cm: dx1, y_kg: m });
+            if (!isNaN(dx2)) points2.push({ x_cm: dx2, y_kg: m });
+        }
+        // 过原点拟合
+        let pts1_m = points1.map(p => ({ x_m: p.x_cm/100, y_kg: p.y_kg }));
+        let pts2_m = points2.map(p => ({ x_m: p.x_cm/100, y_kg: p.y_kg }));
+        let { slope: k1 } = fitOriginSlope(pts1_m);
+        let { slope: k2 } = fitOriginSlope(pts2_m);
+        document.getElementById('slope1Val').innerText = k1.toExponential(5);
+        document.getElementById('slope2Val').innerText = k2.toExponential(5);
+        let k_avg = (k1 + k2)/2;
+        let k_std = Math.abs(k1 - k2)/Math.sqrt(2); // 简单标准偏差估计
+        document.getElementById('kAvgVal').innerText = k_avg.toExponential(5);
+        document.getElementById('kAvgStd').innerText = k_std.toExponential(5);
+        
+        // 生成拟合线
+        let maxX_cm = Math.max(...points1.map(p=>p.x_cm), ...points2.map(p=>p.x_cm), 0.1);
+        let lineX = [0, maxX_cm];
+        let lineY1 = [0, k1 * (maxX_cm/100)];
+        let lineY2 = [0, k2 * (maxX_cm/100)];
+        
+        if (chartInstance) chartInstance.destroy();
+        chartInstance = new Chart(ctx, {
+            type: 'scatter',
+            data: {
+                datasets: [
+                    { label: '组1 实验数据', data: points1.map(p => ({x: p.x_cm, y: p.y_kg})), backgroundColor: '#3b82f6', pointRadius: 5, type: 'scatter', order: 2 },
+                    { label: '组2 实验数据', data: points2.map(p => ({x: p.x_cm, y: p.y_kg})), backgroundColor: '#ef4444', pointRadius: 5, type: 'scatter', order: 2 },
+                    { label: `组1 拟合 (k=${k1.toFixed(4)} kg/m)`, data: lineX.map((x,i) => ({x: x, y: lineY1[i]})), type: 'line', borderColor: '#2563eb', borderWidth: 2, fill: false, pointRadius: 0, order: 1 },
+                    { label: `组2 拟合 (k=${k2.toFixed(4)} kg/m)`, data: lineX.map((x,i) => ({x: x, y: lineY2[i]})), type: 'line', borderColor: '#dc2626', borderWidth: 2, borderDash: [5,5], fill: false, pointRadius: 0, order: 1 }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: true,
+                plugins: { tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: (${ctx.parsed.x.toFixed(3)} cm, ${ctx.parsed.y.toFixed(3)} kg)` } } },
+                scales: { x: { title: { display: true, text: '伸长量 Δx (cm)' }, beginAtZero: true }, y: { title: { display: true, text: '砝码质量 m (kg)' }, beginAtZero: true } }
+            }
+        });
+        return { k1, k2, k_avg, k_std };
+    }
+
+    // 更新不确定度表及最终杨氏模量
+    function updateUncertaintyAndFinalE(k_avg, k_std) {
+        let E = computeEFromSlope(k_avg);
+        let L_cm = physStore.L.avg, D_cm = physStore.D.avg, b_cm = physStore.b.avg, d_cm = physStore.d.avg;
+        let uL_rel = (L_cm ? physStore.L.uComb / L_cm : 0);
+        let uD_rel = (D_cm ? physStore.D.uComb / D_cm : 0);
+        let ub_rel = (b_cm ? physStore.b.uComb / b_cm : 0);
+        let ud_rel = 2 * (d_cm ? physStore.d.uComb / d_cm : 0);
+        let uSlope_rel = (Math.abs(k_avg) > 1e-12) ? k_std / Math.abs(k_avg) : 0;
+        let relComb = Math.sqrt(uL_rel**2 + uD_rel**2 + ub_rel**2 + ud_rel**2 + uSlope_rel**2);
+        let U_E = E * relComb;
+        document.getElementById('finalEValue').innerHTML = E.toExponential(5);
+        document.getElementById('finalUE').innerHTML = U_E.toExponential(5);
+        document.getElementById('relUncert').innerHTML = (relComb * 100).toFixed(3);
+        
+        let tbody = document.getElementById('uncertaintyTableBody');
+        let rows = [
+            { name: '长度 L (cm)', avg: L_cm, uA: physStore.L.uA, uB: physStore.L.uB, uComb: physStore.L.uComb, rel: uL_rel*100 },
+            { name: '距离 D (cm)', avg: D_cm, uA: physStore.D.uA, uB: physStore.D.uB, uComb: physStore.D.uComb, rel: uD_rel*100 },
+            { name: '垂距 b (cm)', avg: b_cm, uA: physStore.b.uA, uB: physStore.b.uB, uComb: physStore.b.uComb, rel: ub_rel*100 },
+            { name: '直径 d (cm)', avg: d_cm, uA: physStore.d.uA, uB: physStore.d.uB, uComb: physStore.d.uComb, rel: (2*physStore.d.uComb/d_cm)*100 },
+            { name: '平均斜率 k_avg (kg/m)', avg: k_avg, uA: k_std, uB: 0, uComb: k_std, rel: uSlope_rel*100 }
+        ];
+        let html = '';
+        rows.forEach(r => {
+            let avgShow = (r.name.includes('斜率')) ? r.avg.toExponential(5) : r.avg.toFixed(5);
+            let uCombShow = (r.name.includes('斜率')) ? r.uComb.toExponential(5) : r.uComb.toFixed(5);
+            let uAShow = (r.name.includes('斜率')) ? r.uA.toExponential(5) : r.uA.toFixed(6);
+            let uBShow = (r.name.includes('斜率')) ? '---' : r.uB.toFixed(6);
+            html += `<tr><td>${r.name}</td><td>${avgShow} ± ${uCombShow}</td><td>${uAShow}</td><td>${uBShow}</td><td>${r.rel.toFixed(3)}%</td></tr>`;
+        });
+        html += `<tr style="background:#eef2ff;"><td><strong>杨氏模量 E</strong></td><td colspan="2">${E.toExponential(5)} ± ${U_E.toExponential(5)} Pa</td><td colspan="2">相对总不确定度: ${(relComb*100).toFixed(3)}%</td></tr>`;
+        tbody.innerHTML = html;
+    }
+
+    // 全局刷新
+    function fullComputeAndRender() {
+        updateAllRulerAverages();
+        updateRawDataTable();
+        let { k_avg, k_std } = drawDualPlot();
+        updateUncertaintyAndFinalE(k_avg, k_std);
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+        initRulerTable();
+        initPhysTables();
+        setTimeout(() => { fullComputeAndRender(); }, 60);
+    });
+</script>
+</body>
+</html>
